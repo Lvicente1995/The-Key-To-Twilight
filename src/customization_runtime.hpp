@@ -107,7 +107,11 @@ void apply(const selections::Selection& requested) {
 }
 
 HookAction onPrepareCustomSound(ModContext* context,void* args,void* result,void* user) {
-    if(characterVoice.prepareSequence(mods::arg<JAISe*>(args,0))) {
+    // JAISe is global. Only substitute character vocals while the current
+    // local player is actually being rendered as Xion. This keeps scene-load
+    // and multiplayer/remote-player audio out of the character voice path.
+    if(character.hasGameplayPacket()
+        &&characterVoice.prepareSequence(mods::arg<JAISe*>(args,0))) {
         *static_cast<bool*>(result)=true;
         return HOOK_SKIP_ORIGINAL;
     }

@@ -224,7 +224,11 @@ class System {
         bytes.assign(static_cast<const u8*>(buffer.data),static_cast<const u8*>(buffer.data)+buffer.size);return true;
     }
     bool compatible(daAlink_c* link) const {
-        if(!enabled_||!ready_||!link||link->checkWolf()||link->mClothesChangeWaitTimer||!link->mpLinkModel||!link->mpLinkFaceModel)return false;
+        // Only replace the actual local player. Multiplayer mods can create
+        // Link-compatible/puppet actors; intercepting those would suppress or
+        // corrupt the remote renderer they own.
+        auto* local=static_cast<daAlink_c*>(dComIfGp_getLinkPlayer());
+        if(!enabled_||!ready_||!link||link!=local||link->checkWolf()||link->mClothesChangeWaitTimer||!link->mpLinkModel||!link->mpLinkFaceModel)return false;
         auto* data=link->mpLinkModel->getModelData();auto* face=link->mpLinkFaceModel->getModelData();
         if(!data||data->getJointNum()!=kBodyBones||!face||face->getJointNum()!=kFaceBones)return false;
         // Outfit reloads and other model mods must not silently change the
@@ -299,7 +303,15 @@ public:
         // retirement. The module's final destruction releases them after detach.
     }
     void beginFrame(daAlink_c*) {reset();}
-    bool hasGameplayPacket() const {return enabled_&&ready_&&gameplay_&&gameplay_->valid;}
+    bool hasGameplayPacket() const {
+        if(!enabled_||!ready_||!gameplay_||!gameplay_->valid)return false;
+        auto* local=static_cast<daAlink_c*>(dComIfGp_getLinkPlayer());
+        // Scene changes can destroy/recreate Link between render callbacks.
+        // Never use a packet captured from an actor/model that is no longer
+        // the current local player.
+        return local&&gameplay_->actor==local&&local->mpLinkModel
+            &&gameplay_->bodyModels[0]==local->mpLinkModel;
+    }
     bool ownsShadowModel(J3DModel* model) const {return hasGameplayPacket()&&gameplay_->matches(model);}
     HookAction queueModel(daAlink_c* link,J3DModel* model,bool hidden,bool preview) {
         if(!compatible(link)||!model)return HOOK_CONTINUE;

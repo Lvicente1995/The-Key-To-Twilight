@@ -130,14 +130,22 @@ class System {
         auto* audio=Z2AudioMgr::getInterface();
         if(!audio)return;
         const auto* list=audio->mSoundMgr.getSeMgr()->getCategory(SE_CATEGORY_PLAYER_VOICE)->getSeList();
-        for(auto* node=list->getFirst();node;node=node->getNext()) {
+        for(auto* node=list->getFirst();node;) {
+            // stop() may unlink the current sound. Capture next before touching it.
+            auto* next=node->getNext();
             JAISe* se=node->getObject();
-            if(!ownsSequence(se->getSeqData()->mBase))continue;
-            se->stop();
-            auto* track=se->getTrack();
-            if(track->getStatus()==JASTrack::STATUS_RUN)track->stopSeq();
-            track->getSeqCtrl()->init();
-            se->inner_.mSeqData.set(nullptr,0);
+            if(se&&se->getSeqData()&&ownsSequence(se->getSeqData()->mBase)) {
+                // Clear the mod-owned sequence while the native audio mutex is
+                // held. Do not dereference a track after se->stop(), because
+                // native stop may detach/recycle it immediately.
+                if(auto* track=se->getTrack()) {
+                    if(track->getStatus()==JASTrack::STATUS_RUN)track->stopSeq();
+                    if(auto* ctrl=track->getSeqCtrl())ctrl->init();
+                }
+                se->inner_.mSeqData.set(nullptr,0);
+                se->stop();
+            }
+            node=next;
         }
     }
 public:
